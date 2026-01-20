@@ -1,60 +1,69 @@
 pipeline {
   agent any
+
   tools {
-    jdk 'Java17'
+    jdk 'Java21'
     maven 'Maven'
   }
+
+  environment {
+    DOCKER_USER = "jaianshulgautam"
+    IMAGE_NAME = "indiaproj"
+    IMAGE_TAG = "1.0"
+  }
+
   stages {
+
     stage('Checkout Code') {
       steps {
-        echo 'Pulling from Github'
-        git branch: 'main', credentialsId: 'mygithubcred', url: 'https://github.com/chntraining/wipjen.git'
+        git branch: 'main',
+            url: 'https://github.com/insaneskyler/k8-test.git'
       }
     }
-    stage('Test Code') {
-      steps {
-        echo 'JUNIT Test case execution started'
-        bat 'mvn clean test'
-        
-      }
-      post {
-        always {
-		  junit '**/target/surefire-reports/*.xml'
-          echo 'Test Run is SUCCESSFUL!'
-        }
 
-      }
-    }
     stage('Build Project') {
       steps {
-        echo 'Building Java project'
-        bat 'mvn clean package -DskipTests'
+        bat 'mvn clean package'
       }
     }
-    stage('Build the Docker Image') {
+
+    stage('Build Docker Image') {
       steps {
-        echo 'Building Docker Image'
-        bat 'docker build -t myjavaproj:1.0 .'
+        bat 'docker build -t %DOCKER_USER%/%IMAGE_NAME%:%IMAGE_TAG% .'
       }
     }
-    
-    stage('Run Docker Container') {
+
+    stage('Push Docker Image to DockerHub') {
       steps {
-        echo 'Running Java Application'
+        withCredentials([usernamePassword(credentialsId: 'dockerhubpwd', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
+          bat '''
+          docker login -u %USER% -p %PASS%
+          docker push %DOCKER_USER%/%IMAGE_NAME%:%IMAGE_TAG%
+          '''
+        }
+      }
+    }
+
+    stage('Deploy to Kubernetes') {
+      steps {
         bat '''
-        docker rm -f myjavaproj-container || exit 0
-        docker run --name myjavaproj-container myjavaproj:1.0
-        
-        '''               
+        kubectl apply -f deployment.yaml
+        kubectl apply -f services.yaml
+        kubectl get pods
+        kubectl get services
+        minikube addons enable dashboard
+        minikube dashboard
+        '''
       }
     }
   }
+
   post {
     success {
-      echo 'BUild and Run is SUCCESSFUL!'
+      echo 'CI/CD Pipeline Executed Successfully!'
     }
     failure {
-      echo 'OOPS!!! Failure.'
+      echo 'Pipeline Failed — Check Logs'
     }
   }
 }
